@@ -33,8 +33,6 @@ from typing import Deque
 
 from ib_insync import IB, Contract, Future, Stock, util
 
-from storage.writer import db_writer_task, fmt_1s, fmt_5s_cdv
-
 # 修補 asyncio，確保 ib_insync callback 在同一 event loop 執行（單執行緒，無需鎖）
 util.patchAsyncio()
 
@@ -133,8 +131,6 @@ _tick_log:  Deque[dict]           = deque(maxlen=200)
 _msg_count: int = 0
 _start_time = datetime.now()
 
-# ── DB 寫入 Queue（maxsize 覆蓋 4h 回填：2 sym × 2880 根 5s bar + 緩衝）──────
-_db_queue: asyncio.Queue = asyncio.Queue(maxsize=6000)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -204,10 +200,6 @@ def make_tick_cb(sym: str):
             "vwap": vwap,
         }
         _states.setdefault(sym, QuoteState(symbol=sym)).bars_1s.append(bar_dict)
-        try:
-            _db_queue.put_nowait(fmt_1s(sym, bar_dict))
-        except asyncio.QueueFull:
-            log.debug("db_queue full, drop 1s bar %s %s", sym, _1s["sec"])
 
     def cb(ticker):
         global _msg_count
@@ -303,11 +295,6 @@ def _ingest_bar(sym: str, b: dict) -> None:
         "net":   delta,
     }
     s.delta_bars.append(cdv_bar)
-    if cdv_bar["ts"]:
-        try:
-            _db_queue.put_nowait(fmt_5s_cdv(sym, cdv_bar, vwap_day=s.day_vwap))
-        except asyncio.QueueFull:
-            log.debug("db_queue full, drop 5s cdv %s %s", sym, b["time"])
 
 
 
@@ -722,8 +709,6 @@ async def run_terminal(
             _errors.append(msg)
             log.warning("IB API error: %s", msg)
     ib.errorEvent += on_error
-
-    asyncio.create_task(db_writer_task(_db_queue))
 
     try:
         ib.connect(host, port, clientId=client_id)
