@@ -1,0 +1,16 @@
+services:
+  questdb:
+    image: questdb/questdb:latest
+    container_name: ibkr_questdb
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9000:9000"   # HTTP REST + Web Console
+      - "127.0.0.1:9009:9009"   # ILP TCP（terminal.py 寫入用）
+    volumes:
+      - questdb_data:/var/lib/questdb
+    environment:
+      - QDB_TELEMETRY_ENABLED=false
+
+volumes:
+  questdb_data:
+    driver: local
